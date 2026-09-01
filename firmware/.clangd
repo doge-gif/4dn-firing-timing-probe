@@ -1,0 +1,9 @@
+CompileFlags:
+  # hal/ + SDK code resolves against the host pico build DB.
+  CompilationDatabase: ../build-pico
+  # Interrogate the devShell's arm-none-eabi-gcc for its builtin includes +
+  # predefined macros so clangd stops flagging SDK builtins as unknown.
+  # (The Nix store path is matched by the glob; run the editor from inside `nix develop`.)
+  Add: [--query-driver=**/arm-none-eabi-g*]
+  # Drop GCC-only flags clang rejects (extend as needed during bring-up).
+  Remove: [-mcpu=*, -mthumb, -mfloat-abi=*]

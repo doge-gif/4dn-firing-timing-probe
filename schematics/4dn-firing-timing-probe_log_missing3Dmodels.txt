@@ -1,0 +1,1 @@
+[('J1', '/app/extensions/Library/3dmodels/Connector_USB.3dshapes/USB_C_Receptacle_Palconn_UTC16-G.step')]

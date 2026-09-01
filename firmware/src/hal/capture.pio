@@ -1,0 +1,151 @@
+;
+; capture.pio -- dual-edge timestamp capture
+;
+; One PIO state machine watches ONE input pin and, on EVERY logic transition
+; (both edges), pushes a 32-bit word to the RX FIFO: bit 31 = the pin LEVEL
+; sampled at the edge (1 = rising, 0 = falling), bits [30:0] = a 31-bit snapshot
+; of a free-running counter. DMA drains the FIFO into an SRAM ring with zero
+; per-edge CPU work; the CPU converts words to 64-bit timestamps + polarity later,
+; off the hot path, via core::decode_capture. Polarity IS encoded per edge (bit
+; 31), so a dropped edge cannot invert the polarity of every edge after it -- the
+; earlier alternation-only scheme could, silently, on one missed capture.
+;
+; SHARED TIMEBASE (the crux)
+; --------------------------
+; The capture counter ticks at a fixed sysclk/2 = 62.5 MHz (clkdiv 1.0, 2 PIO
+; cycles per count -- see the TICK-UNIT DECISION below). Every capture SM is
+; enabled in one synchronized batch (see Capture::start) so all counters are
+; phase-locked, and pickup + ignition snapshots live in one common timebase. The
+; pickup itself is emitted on the CPU (hal::SoftPattern drives GP18 as SIO) and
+; self-captured here, so its edges land on this same timebase like any other pin.
+;
+; COUNTER DIRECTION AND SENSE
+; ---------------------------
+; X is a free-running DOWN counter (seeded 0xFFFFFFFF via `mov x, ~null`, wraps
+; freely). On each edge we snapshot ~X (via `mov y, ~x`), an UP-counting value:
+; the timestamps INCREASE with time. This lets
+; core::decode_capture / core::Timebase64 treat the capture stream with identical
+; increasing-source semantics -- one shared decode, no sign special-casing. We
+; keep the low 31 bits ([30:0]) of ~X and pack the pin level into bit 31, so the
+; timestamp is 31-bit (wraps ~34 s at 62.5 MHz; Timebase64 is built 31-bit).
+;
+; EDGE DETECTION WITH A FREE-RUNNING COUNTER
+; ------------------------------------------
+; PIO `wait pin` would BLOCK and stop the counter advancing at a fixed rate, so
+; we do NOT use it. Instead the SM's physical phase (line currently LOW vs HIGH)
+; is encoded by which poll loop it sits in (wait_for_high vs wait_for_low). Each
+; loop tests the pin with `jmp pin` and, while the pin is UNCHANGED, decrements X
+; with `jmp x--`. The steady poll is thus TWO instructions per iteration:
+;
+;   wait_for_high:                       ; we are LOW, waiting for a rising edge
+;       jmp pin, rising_edge             ; pin==1? -> edge; snapshot & go LOW-wait
+;       jmp x--, wait_for_high           ; else decrement counter, keep polling
+;       jmp wait_for_high                ; (X wrapped through 0 -> keep polling)
+;
+; TICK-UNIT DECISION (READ THIS -- the capture->tick conversion depends on it)
+; ------------------------------------------------------
+; The steady poll is 2 cycles/iteration and decrements X exactly once per
+; iteration, so the CAPTURE COUNTER TICKS AT sysclk/2 = 62.5 MHz:
+;
+;       1 capture-count = 2 sysclk ticks (at 125 MHz) = 16 ns.
+;
+; A captured delta scales by x2 (capture-counts -> 125 MHz sysclk ticks); the
+; factor is exported as hal::kCaptureTicksPerCount = 2 in capture.hpp. The angle
+; math needs no absolute rate (interp_angle is a ratio within a rev, so the rate
+; cancels), so this is only for consumers that want real time. The counter is exact and uniform
+; in BOTH edge phases (both poll loops are 2 cyc/iter), so intervals are precise
+; to 16 ns -- far finer than needed: at RPM_MAX the tightest interval is ~1000
+; ticks = ~500 counts.
+;
+; Why not 1:1? RP2040 PIO cannot both test a pin AND post-decrement a scratch reg
+; in a single instruction, so a portable dual-edge poll costs 2 cycles/iter. The
+; constant x2 factor is honest, trivially applied, and cross-checkable on a
+; scope; it beats side-set/IRQ tricks that muddy cycle accounting.
+
+.pio_version 0
+
+.program capture
+
+; X = free-running DOWN counter (seeded 0xFFFFFFFF by c-sdk). We push ~X so the
+; emitted 32-bit snapshots INCREASE with time,
+; which lets core::Timebase64/decode_capture treat every channel identically.
+;
+; Y holds the per-edge up-count snapshot (mov y, ~x) which we then `in` into the
+; ISR alongside the sampled pin level; the two poll loops (wait_for_high vs
+; wait_for_low) still track physical phase to route each edge.
+
+; PACKED PUSH (level + timestamp), shift-left ISR:
+;   mov  y, ~x     ; Y = up-counting snapshot (~X)
+;   in   pins, 1   ; ISR bit0 = LIVE pin level (sampled at the edge)
+;   in   y, 31     ; shift-left => ISR = (level << 31) | Y[30:0]
+;   push noblock   ; word: bit31 = level, bits[30:0] = 31-bit timestamp
+; Sampling the pin per edge means core::decode_capture never has to GUESS polarity
+; by alternation, so a dropped edge cannot invert every edge after it.
+.wrap_target
+wait_for_high:
+    jmp    pin, rising_edge    ; pin HIGH now? (we were LOW) -> rising edge
+    jmp    x--, wait_for_high  ; else tick counter down, keep polling (2 cyc/iter)
+    jmp    wait_for_high       ; counter wrapped through 0; keep polling
+rising_edge:
+    mov    y, ~x               ; Y = up-counting snapshot of this edge
+    in     pins, 1             ; ISR bit0 = pin level (HIGH here -> 1)
+    in     y, 31               ; ISR = (level<<31) | ts[30:0]
+    push   noblock             ; push packed word -> RX FIFO -> DMA (drop if full)
+
+wait_for_low:
+    jmp    pin, still_high     ; pin STILL HIGH -> keep waiting for it to fall
+    jmp    falling_edge        ; pin LOW now -> falling edge
+still_high:
+    jmp    x--, wait_for_low   ; tick counter down while HIGH (2 cyc/iter)
+    jmp    wait_for_low        ; counter wrapped through 0; keep polling
+falling_edge:
+    mov    y, ~x               ; snapshot the falling edge
+    in     pins, 1             ; ISR bit0 = pin level (LOW here -> 0)
+    in     y, 31               ; ISR = (level<<31) | ts[30:0]
+    push   noblock
+.wrap                          ; wrap back to wait_for_high
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+// Configure a capture SM to timestamp both edges of `pin` in the shared
+// timebase. `pin` is used for JMP PIN (the branch-on-pin source) and set as a
+// PIO input. clkdiv is forced to 1.0 so the counter advances at a fixed 2
+// cycles/count = 62.5 MHz (see capture.pio header; kCaptureTicksPerCount = 2).
+//
+// IMPORTANT (self-capture): to timestamp GP18 (driven by hal::SoftPattern as a
+// CPU/SIO output) with NO loopback wire, DO NOT call pio_gpio_init here -- we
+// only READ the pad, we must not steal the pin's function from the SIO driver.
+// pio_gpio_init would route the pad's output to THIS PIO and fight the SIO
+// driver. For a real ignition-sense input (GP16/GP17, external pull-up) the pin
+// is a plain input already; again we only read it, so no pio_gpio_init.
+static inline void capture_program_init(PIO pio, uint sm, uint offset, uint pin) {
+    // Mark the pin as a PIO input (pindir = 0). This does NOT change the pad's
+    // function select, so it will not disturb a pin already driven elsewhere
+    // (the SIO SoftPattern driver on GP18) -- we passively sample the pad.
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, false);
+
+    pio_sm_config c = capture_program_get_default_config(offset);
+    // JMP PIN source = the watched pin (used by `jmp pin, ...`).
+    sm_config_set_jmp_pin(&c, pin);
+    // IN base = the watched pin (not strictly needed since we snapshot X via
+    // ISR, but keep the mapping coherent for clarity/debug).
+    sm_config_set_in_pins(&c, pin);
+    // ISR shifts LEFT (shift_right=false): each edge does `in pins,1` (level ->
+    // bit0) then `in y,31`, leaving ISR = (level<<31) | ts[30:0], which we push
+    // manually. Autopush OFF (we control the single 32-bit push per edge).
+    sm_config_set_in_shift(&c, false /*shift_right -> shift LEFT*/, false /*autopush off*/, 32);
+    // RX only; join both FIFO halves to RX for an 8-word cushion vs DMA latency.
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    // 1.0 => run at full sysclk; counter rate is sysclk/2 by loop
+    // construction (documented as kCaptureTicksPerCount = 2).
+    sm_config_set_clkdiv(&c, 1.0f);
+
+    pio_sm_init(pio, sm, offset, &c);
+
+    // Seed X = 0xFFFFFFFF (free-running DOWN counter) via `mov x, ~null`.
+    pio_sm_exec(pio, sm, pio_encode_mov_not(pio_x, pio_null));
+    // SM left DISABLED; Capture::start() enables all SMs synchronously so their
+    // counters are phase-locked and share one timebase.
+}
+%}

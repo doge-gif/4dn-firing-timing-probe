@@ -1,0 +1,13 @@
+# build outputs live at repo root (created via ../build-* from firmware/)
+build-host/
+build-pico/
+build-*/
+*.uf2
+*.elf
+*.bin
+*.dis
+compile_commands.json
+# nix / direnv
+.direnv/
+result
+result-*

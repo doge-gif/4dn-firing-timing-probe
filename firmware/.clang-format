@@ -1,0 +1,8 @@
+---
+BasedOnStyle: LLVM
+ColumnLimit: 100
+PointerAlignment: Left
+SortIncludes: true
+IncludeBlocks: Regroup
+SpaceAfterCStyleCast: false
+AlwaysBreakTemplateDeclarations: Yes

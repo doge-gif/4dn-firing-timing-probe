@@ -1,0 +1,5 @@
+---
+# Upstream FatFs (ELM ChaN) is vendored pristine. Do not reformat it;
+# DisableFormat makes the lint hook a no-op over these files.
+DisableFormat: true
+SortIncludes: false

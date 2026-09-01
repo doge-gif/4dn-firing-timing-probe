@@ -1,0 +1,117 @@
+/*
+ * OVERRIDE of pico-sdk's section_default_data.incl (SDK 2.3.0).
+ *
+ * Why this file exists:
+ *   In pico-sdk 2.x the `*(.time_critical*)` input sections are folded into the
+ *   `.data` output section (they are NOT a standalone `.time_critical` output
+ *   section as they were in SDK 1.x). That means `SIZEOF(.time_critical)` is
+ *   always 0 and a naive `ASSERT(SIZEOF(.time_critical) <= 8K)` can never fire.
+ *
+ *   To bound the RAM-hot code at link time we instead bracket the
+ *   `*(.time_critical*)` input with two symbols:
+ *       __time_critical_start__ / __time_critical_end__
+ *   The size cap is then asserted in linker/prober_sections.ld:
+ *       ASSERT(__time_critical_end__ - __time_critical_start__ <= 12K, ...)
+ *
+ *   Keeping the input sections inside `.data` is deliberate: crt0.S copies
+ *   [__data_start__, __data_end__) from flash to SRAM at boot via the fixed
+ *   data_cpy_table. Relocating `.time_critical` into its own output section
+ *   would take it out of that copy span and leave the hot functions
+ *   uninitialised in RAM. Bracketing measures the code in place without
+ *   disturbing the boot copy.
+ *
+ * This is a faithful copy of the SDK 2.3.0 file with ONLY the two bracket
+ * symbols added around `*(.time_critical*)`. It is wired in via
+ * pico_add_linker_script_override_path() in ../src/CMakeLists.txt and is found
+ * ahead of the SDK copy on the linker's -L search path. If the vendored SDK's
+ * section_default_data.incl changes in a future bump, re-sync this copy.
+ *
+ * Defines the following symbols for use by code:
+ *   __data_start__, __data_end__
+ *   __mutex_array_start, __mutex_array_end
+ *   __etext
+ *   __bss_start__, __bss_end__
+ *   __tls_base, __tls_end
+ *   __tbss_end
+ *   __global_pointer$
+ * ...plus (added here) __time_critical_start__, __time_critical_end__
+ */
+
+SECTIONS
+{
+    .data : {
+        __data_start__ = .;
+        *(vtable)
+
+        __time_critical_start__ = .;
+        *(.time_critical*)
+        __time_critical_end__ = .;
+
+        /* remaining .text and .rodata; i.e. stuff we exclude in ..._excludes files because we want it in RAM */
+        *(.text*)
+        . = ALIGN(4);
+        *(.rodata*)
+        . = ALIGN(4);
+
+        PROVIDE_HIDDEN (__emutls_array_start = .);
+        *(.*.__emutls_v.*)
+        PROVIDE_HIDDEN (__emutls_array_end = .);
+        . = ALIGN(4);
+
+        *(.data*)
+        *(.sdata*)
+
+        . = ALIGN(4);
+        *(.after_data.*)
+        . = ALIGN(4);
+        /* preinit data */
+        PROVIDE_HIDDEN (__mutex_array_start = .);
+        KEEP(*(SORT(.mutex_array.*)))
+        KEEP(*(.mutex_array))
+        PROVIDE_HIDDEN (__mutex_array_end = .);
+
+        *(.jcr)
+        . = ALIGN(4);
+    } > RAM AT> RAM_STORE
+
+    .tdata : {
+        . = ALIGN(4);
+		*(.tdata .tdata.* .gnu.linkonce.td.*)
+        /* All data end */
+        __tdata_end = .;
+    } > RAM AT> RAM_STORE
+    PROVIDE(__data_end__ = .);
+
+    /* __etext is (for backwards compatibility) the name of the .data init source pointer (...) */
+    __etext = LOADADDR(.data);
+
+    . = ALIGN(4);
+    /* note that .tbss is expected to directly follow .tdata */
+    .tbss (NOLOAD) : {
+        __bss_start__ = .;
+        __tls_base = .;
+        *(.tbss .tbss.* .gnu.linkonce.tb.*)
+        *(.tcommon)
+
+        . = ALIGN(4);
+        __tls_end = .;
+    } > RAM
+
+    /* workaround RISC-V GNU linker bug with spacer section (otherwise it places .bss over .tbss) */
+    .tbss_space (NOLOAD) : {
+        . = __bss_start__ + SIZEOF(.tbss);
+    } > RAM
+
+    .bss (NOLOAD) : {
+        . = ALIGN(4);
+        __tbss_end = .;
+
+        *(SORT_BY_ALIGNMENT(SORT_BY_NAME(.bss*)))
+        *(COMMON)
+        PROVIDE(__global_pointer$ = . + 2K);
+        *(.sbss*)
+        . = ALIGN(4);
+        __bss_end__ = .;
+    } > RAM
+
+}

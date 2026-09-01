@@ -1,0 +1,46 @@
+add_executable(
+    unit_tests
+    doctest_main.cpp
+    test_smoke.cpp
+    test_types.cpp
+    test_ini.cpp
+    test_parse.cpp
+    test_config.cpp
+    test_timebase.cpp
+    test_angle.cpp
+    test_stats.cpp
+    test_fsm.cpp
+    test_csv.cpp
+    test_tach.cpp
+    test_capture_decode.cpp
+    test_spsc.cpp
+    test_run_modes.cpp
+    test_skew.cpp
+    test_fileio.cpp
+    test_fatfs.cpp
+    test_hold_ring.cpp
+    ${CMAKE_SOURCE_DIR}/src/hal/flashfs.cpp
+    ${CMAKE_SOURCE_DIR}/src/hal/diskio_ram.cpp
+    ${CMAKE_SOURCE_DIR}/external/fatfs/ff.c
+    ${CMAKE_SOURCE_DIR}/external/fatfs/ffsystem.c
+    ${CMAKE_SOURCE_DIR}/src/app/run_modes.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/ini.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/parse.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/config.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/angle.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/stats.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/fsm.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/csv.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/tach.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/capture_decode.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/fileio.cpp
+)
+target_include_directories(
+    unit_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/external/doctest
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/external/fatfs
+)
+target_compile_features(unit_tests PRIVATE cxx_std_20)
+add_test(NAME unit_tests COMMAND unit_tests)

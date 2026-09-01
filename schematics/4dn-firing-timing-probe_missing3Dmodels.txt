@@ -1,0 +1,10 @@
+### Missing 3D models - created on 2026-09-03 21:31
+### Printed by checking_3D_models plugin
+Board file: /home/subaru/projects/4dn-firing-timing-probe/schematics/4dn-firing-timing-probe.kicad_pcb
+3D missing models written to:
+/home/subaru/projects/4dn-firing-timing-probe/schematics/4dn-firing-timing-probe_missing3Dmodels.txt
+-------
+('J1', '/app/extensions/Library/3dmodels/Connector_USB.3dshapes/USB_C_Receptacle_Palconn_UTC16-G.step')
+-------
+NUM of 3D missing models:1
+checked extensions ['.stp', '.step', '.stpZ']

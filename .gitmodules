@@ -1,0 +1,17 @@
+[submodule "firmware/external/pico-sdk"]
+	path = firmware/external/pico-sdk
+	url = https://github.com/raspberrypi/pico-sdk
+	shallow = true
+[submodule "firmware/external/doctest"]
+	path = firmware/external/doctest
+	url = https://github.com/doctest/doctest
+	shallow = true
+# Vendored directly (not via pico-sdk's nested lib/tinyusb) so a single
+# non-recursive `git submodule update --init` populates everything. The SDK is
+# pointed here by PICO_TINYUSB_PATH in firmware/CMakeLists.txt. IMPORTANT: keep
+# this pinned to the tinyusb commit the pico-sdk pin expects (SDK 2.3.0 ->
+# 0.18.0); re-pin when bumping pico-sdk.
+[submodule "firmware/external/tinyusb"]
+	path = firmware/external/tinyusb
+	url = https://github.com/hathach/tinyusb
+	shallow = true

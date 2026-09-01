@@ -1,0 +1,144 @@
+# Release build.
+#
+# On a version tag (v*), build prober.uf2 FRESH from the tagged commit and attach
+# it to a draft GitHub Release. This is deliberately a SEPARATE workflow from CI
+# and does NOT reuse any CI build artifact: it checks out the exact commit the tag
+# points at and rebuilds, so tagging a non-HEAD commit still yields the UF2 that
+# matches that commit.
+#
+# All three release artifacts are built fresh from the tagged commit: the firmware
+# UF2, the schematic PDF, and the JLCPCB bare-board gerber zip (reproduced with
+# kicad-cli, matching the fabrication-toolkit's file set). You review the draft and
+# publish.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create/update the release and upload the asset
+
+jobs:
+  firmware-uf2:
+    name: Build prober.uf2 and attach to a draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tagged commit (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0 # full history + tags so `git describe --tags` resolves the version
+
+      - name: Install podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+
+      - name: Build the toolchain image
+        # Same nixos/nix flake-wrapper image CI uses, so the release UF2 comes
+        # from the identical flake-pinned toolchain that gates every commit.
+        run: podman build -t prober-toolchain:latest firmware/docker
+
+      - name: Build prober.uf2 (pico target, in the toolchain container)
+        # run.sh's workdir is firmware/, so `-S .` / `-B ../build-pico-rel` and
+        # external/pico-sdk resolve the same way as the CI build. PROBER_HILTEST is
+        # OFF (default), so this is the normal .uf2, not a HIL self-test build.
+        run: |
+          firmware/docker/run.sh bash -lc '
+            set -euo pipefail
+            export PICO_SDK_PATH="$PWD/external/pico-sdk"
+            cmake -S . -B ../build-pico-rel -DBUILD_TARGET=pico -DPICO_BOARD=pico
+            cmake --build ../build-pico-rel --target prober -j"$(nproc)"
+          '
+
+      - name: Verify the UF2 was produced
+        run: test -f build-pico-rel/src/prober.uf2
+
+      - name: Attach prober.uf2 and third-party notices to the draft release
+        # THIRD_PARTY_LICENSES.md is committed and gated by CI (its --check keeps
+        # it in sync with the submodule/vendored license files), so the tagged
+        # checkout already carries the correct copy. Ship it beside the UF2 to
+        # satisfy the bundled licenses' binary-distribution attribution.
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true # review the draft, then publish
+          files: |
+            build-pico-rel/src/prober.uf2
+            THIRD_PARTY_LICENSES.md
+          fail_on_unmatched_files: true
+
+  schematic-pdf:
+    name: Export schematic.pdf and attach to the draft release
+    # Run after the UF2 job so both attach to ONE draft release (no create race).
+    needs: firmware-uf2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tagged commit
+        # No submodules: the schematic export only needs schematics/*.kicad_sch.
+        uses: actions/checkout@v4
+
+      - name: Export the schematic to PDF (headless kicad-cli)
+        # kicad/kicad:10.0 is a PUBLIC image (kicad-cli 10.0.5, matching the
+        # .kicad_sch format), so a plain `docker run` on the runner is enough --
+        # no Dockerfile, no registry push, no podman. --user + HOME=/tmp give a
+        # runner-owned output file and a writable HOME for kicad-cli.
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:$PWD" -w "$PWD" \
+            kicad/kicad:10.0 \
+            kicad-cli sch export pdf \
+              schematics/4dn-firing-timing-probe.kicad_sch -o schematic.pdf
+
+      - name: Verify the PDF was produced
+        run: test -s schematic.pdf
+
+      - name: Attach schematic.pdf to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: schematic.pdf
+          fail_on_unmatched_files: true
+
+  gerber-zip:
+    name: Build the JLCPCB gerber zip and attach to the draft release
+    # Shares the draft the UF2 job creates (no create race); runs in parallel
+    # with schematic-pdf, each uploading its own asset.
+    needs: firmware-uf2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tagged commit
+        # No submodules: the fab export only needs schematics/*.kicad_pcb.
+        uses: actions/checkout@v4
+
+      - name: Export gerbers + drill (headless kicad-cli)
+        # Reproduces the fabrication-toolkit's file set with KiCad's own plot
+        # engine: protel extensions, separate PTH/NPTH, drill maps, F/B paste.
+        # kicad-cli also emits a job.gbrjob manifest -- dropped so the set matches
+        # the toolkit. Validated against JLCPCB's Gerber Viewer.
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:$PWD" -w "$PWD" \
+            kicad/kicad:10.0 bash -lc '
+              set -euo pipefail
+              pcb=schematics/4dn-firing-timing-probe.kicad_pcb
+              mkdir -p gerber-stage
+              kicad-cli pcb export gerbers \
+                --layers "F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,F.Paste,B.Paste,Edge.Cuts" \
+                -o gerber-stage/ "$pcb"
+              kicad-cli pcb export drill --format excellon --excellon-separate-th \
+                --generate-map --map-format gerberx2 -o gerber-stage/ "$pcb"
+              rm -f gerber-stage/*.gbrjob
+            '
+
+      - name: Zip the gerbers (flat, JLCPCB layout)
+        run: |
+          ( cd gerber-stage && zip -X ../4dn-firing-timing-probe-gerbers.zip * )
+          test -s 4dn-firing-timing-probe-gerbers.zip
+
+      - name: Attach the gerber zip to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: 4dn-firing-timing-probe-gerbers.zip
+          fail_on_unmatched_files: true

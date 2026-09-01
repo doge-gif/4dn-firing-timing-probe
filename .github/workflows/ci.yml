@@ -1,0 +1,47 @@
+# CI pipeline for 4dn-firing-timing-probe firmware.
+#
+# All heavy lifting runs inside the prober-toolchain container image
+# (firmware/docker/Dockerfile) via firmware/docker/run.sh. The image is a thin
+# nixos/nix wrapper that runs the repo's own Nix flake, so CI uses the EXACT
+# pinned toolchain (flake.lock) that local `nix develop` provides — it cannot
+# drift from dev, and any CI system reproduces results with the same one-liner.
+#
+# Entry point inside the container: ci/run.sh (repo-root relative).
+# Invoked as: firmware/docker/run.sh bash -lc '../ci/run.sh'
+# (run.sh sets the container workdir to firmware/, so ../ci/run.sh is correct.)
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-and-lint:
+    name: Build, test, and lint (podman container)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install podman
+        # ubuntu-latest ships podman; this step makes the version explicit and
+        # ensures it is available even if the runner image changes.
+        run: sudo apt-get update && sudo apt-get install -y podman
+
+      - name: Build toolchain image
+        # Thin nixos/nix wrapper (firmware/docker/Dockerfile) — small to build.
+        # The toolchain itself is realized by `nix develop` at run time from the
+        # flake, so provenance comes from flake.lock, not from this image.
+        run: podman build -t prober-toolchain:latest firmware/docker
+
+      - name: Run CI script in container
+        # firmware/docker/run.sh bind-mounts the repo at its real host path and
+        # sets the container workdir to firmware/.  ../ci/run.sh is therefore the
+        # correct path to reach the repo-root script from inside the container.
+        run: firmware/docker/run.sh bash -lc '../ci/run.sh'
