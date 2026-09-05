@@ -62,6 +62,7 @@ firmware/      C++20 firmware — core/ (SDK-free, host-tested), hal/, app/, tes
 schematics/    KiCad board + PCB/breadboard notes (schematics/README.md)
 ci/            CI entry point (container build + lint + test)
 docs/          architecture.md, development.md, refs/ (third-party sources)
+results/       CSV output from my runs
 flake.nix      Nix devShell (pinned toolchain: arm-none-eabi-gcc, probe-rs, …)
 ```
 
