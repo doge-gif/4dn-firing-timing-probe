@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the tagged commit (with submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0 # full history + tags so `git describe --tags` resolves the version
@@ -58,7 +58,7 @@ jobs:
         # it in sync with the submodule/vendored license files), so the tagged
         # checkout already carries the correct copy. Ship it beside the UF2 to
         # satisfy the bundled licenses' binary-distribution attribution.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true # review the draft, then publish
           files: |
@@ -74,7 +74,7 @@ jobs:
     steps:
       - name: Checkout the tagged commit
         # No submodules: the schematic export only needs schematics/*.kicad_sch.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Export the schematic to PDF (headless kicad-cli)
         # kicad/kicad:10.0 is a PUBLIC image (kicad-cli 10.0.5, matching the
@@ -93,7 +93,7 @@ jobs:
         run: test -s schematic.pdf
 
       - name: Attach schematic.pdf to the draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: schematic.pdf
@@ -108,7 +108,7 @@ jobs:
     steps:
       - name: Checkout the tagged commit
         # No submodules: the fab export only needs schematics/*.kicad_pcb.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Export gerbers + drill (headless kicad-cli)
         # Reproduces the fabrication-toolkit's file set with KiCad's own plot
@@ -137,7 +137,7 @@ jobs:
           test -s 4dn-firing-timing-probe-gerbers.zip
 
       - name: Attach the gerber zip to the draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: 4dn-firing-timing-probe-gerbers.zip
