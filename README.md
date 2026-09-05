@@ -37,12 +37,11 @@ pickup edges relative to per-cylinder TDC. Details in
 
 ## Quick start
 
-1. **Flash the firmware.** Download the latest `prober.uf2` from the project's
-   GitHub **Releases** page, then hold **BOOTSEL** while plugging in the Pico (it
-   mounts as `RPI-RP2`) and copy the `.uf2` onto it.
-   <!-- TODO: add the Releases link once the first release is published,
-        e.g. https://github.com/<owner>/<repo>/releases/latest -->
-   (Building from source instead: [docs/development.md](docs/development.md).)
+1. **Flash the firmware.** Download the latest
+   prober.uf2 from the project's GitHub [Releases][] page, then hold
+   **BOOTSEL** while plugging in the Pico (it mounts as `RPI-RP2`) and copy the
+   `.uf2` onto it. (Building from source instead:
+   [docs/development.md](docs/development.md).)
 2. **Wire the harness** to the ignitor — pin map in
    [docs/architecture.md](docs/architecture.md#hardware); board files and
    PCB/breadboard notes in [schematics/](schematics/README.md).
@@ -53,6 +52,8 @@ pickup edges relative to per-cylinder TDC. Details in
 5. Wait for the LED to return to steady **1 Hz (Ready)** — the run finished and
    the CSV is flushed — then replug the drive and copy the file. (Copying before
    the LED is Ready is too early; the file is written only at end-of-run.)
+
+[Releases]: https://github.com/doge-gif/4dn-firing-timing-probe/releases/latest
 
 ## Repository layout
 
