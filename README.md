@@ -1,7 +1,7 @@
 # 4dn-firing-timing-probe
 
 A Raspberry Pi Pico (RP2040) bench instrument that maps the ignition **advance
-curve (°BTDC vs RPM)** of a Denso TNDF17 CDI ignitor (as fitted to the Yamaha
+curve (°BTDC vs RPM)** of a Denso TNDF17 TCI ignitor (as fitted to the Yamaha
 SRV250, renessa). It emulates the crankshaft pickup at a commanded RPM,
 timestamps the resulting ignition-coil fire events, and writes the per-cylinder
 timing to CSV files on an onboard FAT volume, retrieved over USB mass storage.
