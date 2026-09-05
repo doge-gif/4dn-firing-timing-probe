@@ -3675,7 +3675,7 @@
 		)
 		(uuid "003c048d-ddf1-495c-bcb5-aae30e51fcc5")
 	)
-	(text_box "G BL/WH\nKill Switch (Pullup)"
+	(text_box "G BL/YL\nKill Switch (Pullup)"
 		(exclude_from_sim no)
 		(at 226.695 37.465 0)
 		(size 15.24 8.89)
@@ -3694,7 +3694,7 @@
 		)
 		(uuid "23149479-dc83-4264-8ab3-f317b40a626e")
 	)
-	(text_box "C WH/GY\nPickup Coil (GND)\n"
+	(text_box "C WH/RD\nPickup Coil (GND)\n"
 		(exclude_from_sim no)
 		(at 208.915 27.305 0)
 		(size 15.24 8.89)
@@ -3713,7 +3713,7 @@
 		)
 		(uuid "37a2f81d-6e36-43c5-b62c-fdace62db362")
 	)
-	(text_box "E GR\nIgnition (F?R?)"
+	(text_box "E GY\nIgnition (F?R?)"
 		(exclude_from_sim no)
 		(at 263.525 37.465 0)
 		(size 13.97 8.89)
@@ -3773,7 +3773,7 @@
 		)
 		(uuid "5c5c6faf-4b83-4ae8-b5af-619f8ad3c7e1")
 	)
-	(text_box "D WH/GY\nPickup Coil"
+	(text_box "D WH/GR\nPickup Coil"
 		(exclude_from_sim no)
 		(at 226.695 27.305 0)
 		(size 15.24 8.89)
